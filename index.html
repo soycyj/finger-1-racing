@@ -22,32 +22,6 @@
         .slots { display: grid; grid-template-columns: repeat(5, 1fr); gap: 15px; margin: 30px 0; }
         .slot { width: 50px; height: 50px; border: 2px solid #333; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 900; color: #444; }
         .slot.active { border-color: #ff9800; color: #ff9800; box-shadow: 0 0 15px #ff9800; }
-
-
-    /* 기존 스타일들 바로 아래에 추가 [cite: 2026-02-04] */
-    @media (orientation: landscape) and (max-height: 500px) {
-        #header { 
-            height: 45px !important; 
-            padding: 0 10px !important;
-        }
-        #ranking-box { 
-            position: fixed !important; 
-            right: 10px !important; 
-            top: 50px !important; 
-            width: 90px !important; 
-            background: rgba(0,0,0,0.7) !important;
-            border-radius: 5px;
-        }
-        canvas { 
-            height: calc(100vh - 50px) !important; 
-            width: auto !important;
-            margin: 0 auto;
-            display: block;
-            touch-action: none; /* 브라우저 기본 터치 액션 방지 [cite: 2026-02-04] */
-        }
-    }
-</style>
-        
     </style>
 </head>
 <body>
@@ -420,25 +394,10 @@ const handleMove = (e) => {
     window.addEventListener('touchend', () => { isPressing = false; });
     
     // [기존 유지] 이동 감지
-    canvas.addEventListener('mousemove', (e) => {
-    // 기존 마우스 로직...
-});
-
-// [추가] 모바일 터치 조작 대응 [cite: 2026-02-04]
-canvas.addEventListener('touchmove', (e) => {
-    e.preventDefault(); // 화면 밀림(스크롤) 방지 [cite: 2026-02-04]
-    const touch = e.touches[0];
-    const rect = canvas.getBoundingClientRect();
-    
-    // 화면 크기가 변해도 정확한 좌표를 찍어주도록 계산 [cite: 2026-02-04]
-    px = (touch.clientX - rect.left) * (canvas.width / rect.width);
-    py = (touch.clientY - rect.top) * (canvas.height / rect.height);
-}, { passive: false });
+    canvas.addEventListener('mousemove', handleMove);
+    canvas.addEventListener('touchmove', (e) => { e.preventDefault(); handleMove(e); }, {passive: false});
 
     draw();
 </script>
 </body>
-
 </html>
-
-
