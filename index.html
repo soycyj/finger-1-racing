@@ -276,11 +276,16 @@ function draw() {
         const pScore = (Math.min(lap, 10) - 1) * currentMap.path.length + pSector;
         liveRank.push({ name: "YOU", score: pScore, color: GRID_COLORS[playerGridRank], done: isPlayerDone, time: playerFinishTime || 9999, lap: Math.min(lap, 10) });
 
+        // [보정] 결승선 통과 시 데이터 역전 방지 로직 [cite: 2026-02-04]
         liveRank.sort((a, b) => {
-            if (a.done && b.done) return a.time - b.time;
-            if (a.done) return -1;
-            if (b.done) return 1;
-            return b.score - a.score;
+            // 1순위: 완주 여부 확인 (FINISH 라인을 넘은 차량을 상단에 고정) [cite: 2026-02-04]
+            if (a.done !== b.done) return a.done ? -1 : 1; 
+
+            // 2순위: 둘 다 완주했다면 기록(time)이 짧은 순서 [cite: 2026-02-04]
+            if (a.done && b.done) return a.time - b.time; 
+
+            // 3순위: 주행 중이라면 (랩 수 * 섹터 수) 점수가 높은 순서 [cite: 2026-02-04]
+            return b.score - a.score; 
         });
 
         document.getElementById('ranking-box').innerHTML = liveRank.map((r, i) => 
@@ -401,4 +406,5 @@ const handleMove = (e) => {
 </script>
 </body>
 </html>
+
 
