@@ -420,11 +420,24 @@ const handleMove = (e) => {
     window.addEventListener('touchend', () => { isPressing = false; });
     
     // [기존 유지] 이동 감지
-    canvas.addEventListener('mousemove', handleMove);
-    canvas.addEventListener('touchmove', (e) => { e.preventDefault(); handleMove(e); }, {passive: false});
+    canvas.addEventListener('mousemove', (e) => {
+    // 기존 마우스 로직...
+});
+
+// [추가] 모바일 터치 조작 대응 [cite: 2026-02-04]
+canvas.addEventListener('touchmove', (e) => {
+    e.preventDefault(); // 화면 밀림(스크롤) 방지 [cite: 2026-02-04]
+    const touch = e.touches[0];
+    const rect = canvas.getBoundingClientRect();
+    
+    // 화면 크기가 변해도 정확한 좌표를 찍어주도록 계산 [cite: 2026-02-04]
+    px = (touch.clientX - rect.left) * (canvas.width / rect.width);
+    py = (touch.clientY - rect.top) * (canvas.height / rect.height);
+}, { passive: false });
 
     draw();
 </script>
 </body>
 
 </html>
+
