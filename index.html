@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Finger 1 Racing - MAX VERSTAPPEN EDITION</title>
+    <style>
+        body { margin: 0; background: #000; color: white; font-family: 'Arial', sans-serif; overflow: hidden; touch-action: none; }
+        #top-ui { width: 100%; height: 140px; background: #0a0a0a; border-bottom: 3px solid #333; display: flex; align-items: center; justify-content: space-between; padding: 0 30px; box-sizing: border-box; z-index: 100; position: relative; }
+        #brand-logo h1 { margin: 0; font-size: 2.2rem; font-weight: 900; font-style: italic; background: linear-gradient(to bottom, #ff9800, #ff5722); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        #brand-logo span { color: #00bcd4; letter-spacing: 5px; font-size: 0.8rem; display: block; font-weight: bold; }
+        .lights { display: flex; gap: 10px; }
+        .light { width: 22px; height: 22px; border-radius: 50%; background: #222; border: 1px solid #444; }
+        .light.red { background: #ff0000; box-shadow: 0 0 15px #ff0000; }
+        .light.green { background: #00ff00; box-shadow: 0 0 20px #00ff00; }
+        #ranking-box { width: 220px; background: rgba(0,0,0,0.9); border: 1px solid #444; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 0.8rem; }
+        #game-area { position: relative; width: 100%; height: calc(100vh - 140px); }
+        canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+        /* [cite: 2026-02-01] 대기실 UI 유지 */
+        #lobby { position: absolute; inset: 0; background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 200; }
+        #countdown { font-size: 5rem; font-weight: 900; color: #ff9800; }
+        .slots { display: grid; grid-template-columns: repeat(5, 1fr); gap: 15px; margin: 30px 0; }
+        .slot { width: 50px; height: 50px; border: 2px solid #333; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 900; color: #444; }
+        .slot.active { border-color: #ff9800; color: #ff9800; box-shadow: 0 0 15px #ff9800; }
+    </style>
+</head>
+<body>
+    <div id="top-ui">
+        <div id="brand-logo"><h1>Finger 1</h1><span>RACING</span></div>
+        <div style="text-align:center;">
+            <div class="lights"><div class="light"></div><div class="light"></div><div class="light"></div><div class="light"></div><div class="light"></div></div>
+            <div id="race-msg" style="margin-top:10px; font-weight:900; color:#ffeb3b;">GRID STANDBY</div>
+        </div>
+        <div id="ranking-box"></div>
+    </div>
+    <div id="game-area">
+        <canvas id="raceCanvas"></canvas>
+        <div id="lobby">
+            <h2 id="map-name" style="color:#00bcd4; font-size:2rem;">SEARCHING GRID...</h2>
+            <div id="countdown">15</div>
+            <div class="slots" id="slots"></div>
+            <button id="join-btn" style="padding: 20px 80px; background: #ff9800; border: none; color: white; font-weight: 900; font-size: 1.5rem; border-radius: 50px; cursor: pointer;">JOIN GRID</button>
+        </div>
+    </div>
+
+<script>
+    const canvas = document.getElementById('raceCanvas');
+    const ctx = canvas.getContext('2d');
+    const area = document.getElementById('game-area');
+
+    // [추가] 1. 그리드별 고유 색상표 (대기실-차량-랭킹 동기화용)
+    const GRID_COLORS = [
+        "#FF3B30", "#FF9500", "#FFCC00", "#4CD964", "#5AC8FA", 
+        "#007AFF", "#5856D6", "#AF52DE", "#FF2D55", "#8E8E93"
+    ];
+
+    // [추가] 2. 비비기 방지용 섹터 체크 변수
+    let sectorPassed = false;
+
+    // [cite: 2026-02-01] 10개 서킷 좌표 고정 - 첫 번째 맵의 시작점 불균형 수정
+    const MAPS = [
+        { name: "INTERLAGOS IMPACT", path: [{x:0.1, y:0.85}, {x:0.9, y:0.85}, {x:0.9, y:0.45}, {x:0.7, y:0.25}, {x:0.55, y:0.15}, {x:0.45, y:0.55}, {x:0.2, y:0.35}, {x:0.25, y:0.25}, {x:0.1, y:0.1}, {x:0.1, y:0.85}], color: '#00bcd4' },
+        { name: "MONACO SPEEDWAY (V3)", path: [{x:0.1, y:0.85}, {x:0.9, y:0.85}, {x:0.9, y:0.65}, {x:0.7, y:0.50}, {x:0.85, y:0.30}, {x:0.6, y:0.15}, {x:0.1, y:0.15}, {x:0.1, y:0.35}, {x:0.3, y:0.35}, {x:0.4, y:0.45}, {x:0.25, y:0.55}, {x:0.1, y:0.65}, {x:0.1, y:0.85}], color: '#00bcd4' },
+        { name: "MARINA BAY STORM", path: [{x:0.1, y:0.85}, {x:0.9, y:0.85}, {x:0.9, y:0.60}, {x:0.7, y:0.60}, {x:0.7, y:0.40}, {x:0.85, y:0.40}, {x:0.85, y:0.15}, {x:0.5, y:0.15}, {x:0.4, y:0.25}, {x:0.5, y:0.35}, {x:0.3, y:0.45}, {x:0.1, y:0.45}, {x:0.1, y:0.70}, {x:0.1, y:0.85}], color: '#bf00ff' },
+        { name: "ARDENNES FOREST CIRCUIT", path: [{x:0.1, y:0.85}, {x:0.9, y:0.85}, {x:0.9, y:0.65}, {x:0.75, y:0.45}, {x:0.85, y:0.20}, {x:0.55, y:0.15}, {x:0.45, y:0.35}, {x:0.25, y:0.15}, {x:0.1, y:0.25}, {x:0.2, y:0.45}, {x:0.1, y:0.65}, {x:0.1, y:0.85}], color: '#4caf50' },
+        { name: "NORTHAMPTON HIGH-SPEED", path: [{x:0.1, y:0.85}, {x:0.9, y:0.85}, {x:0.9, y:0.60}, {x:0.7, y:0.60}, {x:0.85, y:0.40}, {x:0.6, y:0.35}, {x:0.65, y:0.20}, {x:0.5, y:0.15}, {x:0.35, y:0.25}, {x:0.1, y:0.15}, {x:0.2, y:0.40}, {x:0.05, y:0.50}, {x:0.3, y:0.60}, {x:0.45, y:0.70}, {x:0.1, y:0.85}], color: '#ffffff' },
+        { name: "SUZUKA SAKURA LOOP", path: [{x:0.1, y:0.85}, {x:0.9, y:0.85}, {x:0.92, y:0.60}, {x:0.70, y:0.55}, {x:0.80, y:0.35}, {x:0.60, y:0.45}, {x:0.40, y:0.25}, {x:0.15, y:0.40}, {x:0.05, y:0.15}, {x:0.45, y:0.10}, {x:0.55, y:0.25}, {x:0.25, y:0.60}, {x:0.1, y:0.85}], color: '#ff69b4' },
+        { name: "LOMBARDIA SPEED TEMPLE", path: [{x:0.1, y:0.85}, {x:0.9, y:0.85}, {x:0.95, y:0.55}, {x:0.70, y:0.45}, {x:0.85, y:0.25}, {x:0.65, y:0.15}, {x:0.45, y:0.30}, {x:0.35, y:0.10}, {x:0.05, y:0.30}, {x:0.25, y:0.50}, {x:0.40, y:0.60}, {x:0.15, y:0.65}, {x:0.1, y:0.85}], color: '#ff0000' },
+        { name: "CASPIAN WALL STREET", path: [{x:0.1, y:0.85}, {x:0.9, y:0.85}, {x:0.95, y:0.70}, {x:0.75, y:0.70}, {x:0.75, y:0.50}, {x:0.85, y:0.50}, {x:0.85, y:0.15}, {x:0.05, y:0.15}, {x:0.05, y:0.40}, {x:0.25, y:0.40}, {x:0.25, y:0.65}, {x:0.05, y:0.65}, {x:0.1, y:0.85}], color: '#00ffff' },
+        { name: "STYRIAN ALPINE APEX", path: [{x:0.1, y:0.85}, {x:0.9, y:0.85}, {x:0.95, y:0.50}, {x:0.70, y:0.40}, {x:0.85, y:0.15}, {x:0.50, y:0.10}, {x:0.15, y:0.15}, {x:0.35, y:0.35}, {x:0.10, y:0.45}, {x:0.45, y:0.60}, {x:0.15, y:0.70}, {x:0.1, y:0.85}], color: '#4caf50' },
+        { name: "GRAND OASIS FINALE", path: [{x:0.1, y:0.85}, {x:0.9, y:0.85}, {x:0.95, y:0.65}, {x:0.70, y:0.50}, {x:0.90, y:0.30}, {x:0.60, y:0.10}, {x:0.45, y:0.35}, {x:0.55, y:0.50}, {x:0.15, y:0.40}, {x:0.35, y:0.20}, {x:0.05, y:0.15}, {x:0.20, y:0.65}, {x:0.08, y:0.70}, {x:0.1, y:0.85}], color: '#bc00ff' }
+    ];
+
+    let currentMap = MAPS[0], state = 'LOBBY', lap = 1, midPassed = false;
+    let startTime; // 레이스 시작 시간 기록용
+    let playerFinishTime = null; // 플레이어 골인 시간 기록용
+    const TOTAL_LAPS = 3; // 전체 랩 설정 (필요에 따라 변경)
+    let px = 0, py = 0, isDrawing = false, lastValidX = 0, lastValidY = 0;
+    let ghosts = [];
+    let playerGridRank = 0; // 유저의 랜덤 그리드 위치 (0~9)
+    let isPressing = false; // [추가] 마우스/터치 클릭상태 확인용
+
+    function resize() { canvas.width = area.clientWidth; canvas.height = area.clientHeight; }
+    window.onresize = resize; resize();
+
+    const slotGrid = document.getElementById('slots');
+    for(let i=0; i<10; i++) {
+        const s = document.createElement('div'); s.className = 'slot'; s.id = `slot-${i}`; s.innerText = `P${i+1}`;
+        slotGrid.appendChild(s);
+    }
+
+    document.getElementById('join-btn').onclick = () => {
+        document.getElementById('join-btn').style.display = 'none';
+ // 0~9 사이의 랜덤 위치 결정
+        playerGridRank = Math.floor(Math.random() * 10);
+        const slots = document.querySelectorAll('.slot');
+        slots[playerGridRank].classList.add('active');
+        // [변경] 슬롯 번호에 맞는 고유 색상 적용
+        slots[playerGridRank].style.backgroundColor = GRID_COLORS[playerGridRank];
+        slots[playerGridRank].style.color = "#000"; 
+        slots[playerGridRank].innerText = "YOU";
+        let timer = 15;
+        const itv = setInterval(() => {
+            timer--; document.getElementById('countdown').innerText = timer;
+            if(timer === 5) {
+                const roll = setInterval(() => { document.getElementById('map-name').innerText = MAPS[Math.floor(Math.random()*10)].name; }, 50);
+                setTimeout(() => { clearInterval(roll); currentMap = MAPS[Math.floor(Math.random()*10)]; document.getElementById('map-name').innerText = currentMap.name; }, 4900);
+            }
+            if(timer <= 0) { clearInterval(itv); startRace(); }
+        }, 1000);
+    };
+
+   function startRace() {
+        document.getElementById('lobby').style.display = 'none';
+        
+        const W = canvas.width, H = canvas.height;
+        const trackY = 0.85 * H;
+        const gridBaseX = W / 2 - 125; // 시설물 그리드의 기준점
+
+        // 1. 막스 베르스타펜: 대기실에서 정해진 랜덤 그리드 칸에 정확히 배치
+        px = gridBaseX + (playerGridRank * 25);
+        py = trackY;
+        lastValidX = px; lastValidY = py;
+
+        // 2. 고스트들: 남은 그리드 칸에 각각 배치 (시각적 위치와 주행 데이터 동기화)
+        ghosts = [];
+        let aiCount = 1;
+        for(let i = 0; i < 10; i++) {
+            if(i === playerGridRank) continue; 
+            
+            const ghostStartX = gridBaseX + (i * 25);
+            // 맵의 하단 직선 구간 비율을 계산하여 progress에 주입 (그리드 위치에서 출발하게 함)
+            const startProg = (ghostStartX / W - 0.1) / 0.8 * (1 / (currentMap.path.length - 1));
+
+            ghosts.push({
+                name: `P${i+1}`, // 그리드 번호로 이름 변경
+                grid: i,
+                progress: Math.max(0, startProg), 
+                speed: 0.0022 + (Math.random() * 0.0008), 
+                color: GRID_COLORS[i], // [변경] 그리드 고유 색상 부여
+                lap: 1
+            });
+        }
+
+        // 3. 신호등 로직 (정상 작동하도록 복구)
+        state = 'LIGHTS'; 
+        let c = 0;
+        const lights = document.querySelectorAll('.light');
+        lights.forEach(l => { l.classList.remove('green'); l.classList.remove('red'); });
+        
+        const li = setInterval(() => {
+            if(c < 5) lights[c++].classList.add('red');
+            else { 
+                clearInterval(li); 
+                setTimeout(() => {
+                    lights.forEach(l => { l.classList.remove('red'); l.classList.add('green'); });
+                    state = 'RACING';
+                    startTime = Date.now(); // [추가] 전체 랩타임 측정을 위한 기준 시각
+                    document.getElementById('race-msg').innerText = "GREEN LIGHT! PUSH!";
+                }, 1000);
+            }
+        }, 800);
+    }
+
+    // [신규 기능] 경로상의 특정 지점 좌표를 계산 (고스트 주행용)
+function getPointAtProgress(path, progress) {
+        // [수정] progress가 1.0, 2.0 등 정수일 때 index 에러를 방지하기 위해 아주 미세하게 조정
+        let p = progress % 1;
+        if (p === 0 && progress > 0) p = 0.9999; 
+
+        const totalPoints = path.length;
+        const index = Math.min(Math.floor(p * (totalPoints - 1)), totalPoints - 2);
+        const nextIndex = index + 1;
+        
+        const p1 = path[index];
+        const p2 = path[nextIndex];
+        const segProgress = (p * (totalPoints - 1)) - index;
+        
+        return {
+            x: p1.x + (p2.x - p1.x) * segProgress,
+            y: p1.y + (p2.y - p1.y) * segProgress
+        };
+    }    // [cite: 2026-02-01] finger2.txt 주행 로직: 트랙 검사
+    function isPointOnTrack(x, y) {
+        const W = canvas.width, H = canvas.height;
+        const testPath = new Path2D();
+        testPath.moveTo(currentMap.path[0].x * W, currentMap.path[0].y * H);
+        currentMap.path.forEach(p => testPath.lineTo(p.x * W, p.y * H));
+        testPath.closePath();
+        ctx.lineWidth = 55; // finger2 스타일 트랙 폭
+        return ctx.isPointInStroke(testPath, x, y);
+    }
+
+// ... (상단 HTML 및 스캔 로직 생략, 수정이 필요한 스크립트 핵심 부분만 제공합니다)
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if(state === 'LOBBY') { requestAnimationFrame(draw); return; }
+    
+    const W = canvas.width, H = canvas.height;
+    const finishLineX = W / 2 + 150; 
+    const trackY = 0.85 * H;
+
+    // 1. 트랙 및 시각적 요소 (절대 불변 유지) [cite: 2026-02-01]
+    const track = new Path2D();
+    track.moveTo(currentMap.path[0].x * W, currentMap.path[0].y * H);
+    currentMap.path.forEach(p => track.lineTo(p.x * W, p.y * H));
+    track.closePath();
+    ctx.strokeStyle = currentMap.color; ctx.lineWidth = 66; ctx.stroke(track);
+    ctx.strokeStyle = '#050505'; ctx.lineWidth = 54; ctx.stroke(track);
+    ctx.setLineDash([15, 25]); ctx.strokeStyle = currentMap.color + "88"; ctx.lineWidth = 2; ctx.stroke(track); ctx.setLineDash([]);
+
+    // [수정] 결승선 로직: 누군가 10랩에 진입하면 체커기 패턴으로 변경 [cite: 2026-02-04]
+    const leaderLap = Math.max(lap, ...ghosts.map(g => g.lap));
+    if (leaderLap >= 10) {
+        // 체커기 패턴 그리기 (검정/흰색 교차)
+        ctx.lineWidth = 2;
+        for (let i = 0; i < 6; i++) {
+            for (let j = 0; j < 2; j++) {
+                ctx.fillStyle = (i + j) % 2 === 0 ? "#ffffff" : "#000000";
+                ctx.fillRect(finishLineX + (j * 8) - 8, (trackY - 30) + (i * 10), 8, 10);
+            }
+        }
+    } else {
+        // 일반 결승선
+        ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 5; ctx.beginPath();
+        ctx.moveTo(finishLineX, trackY - 30); ctx.lineTo(finishLineX, trackY + 30); ctx.stroke();
+    }
+
+    const gridBaseX = W / 2 - 125;
+    for(let i=0; i<10; i++) {
+        let gx = gridBaseX + (i * 25); 
+        ctx.strokeStyle = (i === playerGridRank) ? GRID_COLORS[i] : "#333"; 
+        ctx.lineWidth = 2; ctx.strokeRect(gx - 10, trackY - 10, 20, 20);
+    }
+
+    const currentTime = startTime ? ((Date.now() - startTime) / 1000).toFixed(2) : "0.00";
+
+    // 2. 주행 로직 (고스트 주행 및 완주 로직 유지) [cite: 2026-02-04]
+    ghosts.forEach(g => {
+        if (state === 'RACING' && !g.isDone) {
+            const oldPos = getPointAtProgress(currentMap.path, (g.progress + 1) % 1);
+            g.progress -= g.speed; 
+            if (g.progress < 0) g.progress += 1;
+            const newPos = getPointAtProgress(currentMap.path, (g.progress + 1) % 1);
+            g.currentSector = Math.floor((1 - g.progress) * (currentMap.path.length - 1));
+
+            if (oldPos.x * W > finishLineX && newPos.x * W <= finishLineX) {
+                g.tempLap = (g.tempLap || 1) + 1;
+                if (g.tempLap > 10) { 
+                    g.isDone = true; 
+                    g.finishTime = parseFloat(currentTime);
+                    g.speed = 0; 
+                    g.progress = (finishLineX / W - 0.1) / 0.8 * (1 / (currentMap.path.length - 1));
+                }
+            }
+            g.lap = Math.min(g.tempLap || 1, 10);
+        }
+    });
+
+    if (lap > 10 && !playerFinishTime) { playerFinishTime = parseFloat(currentTime); }
+    const allGhostsDone = ghosts.every(g => g.isDone);
+    const isPlayerDone = (playerFinishTime !== null);
+    if (isPlayerDone) { px = finishLineX; py = trackY; }
+    if (state === 'RACING' && isPlayerDone && allGhostsDone) { state = 'FINISHED'; }
+
+    // 3. UI 및 서킷명 노출 (수정: 대기 중에도 서킷명이 즉시 보이도록 위치 변경) [cite: 2026-02-04]
+    const circuitTag = `<div style="font-size:11px; color:#00bcd4; margin-top:4px;">${currentMap.name}</div>`;
+    
+    if (state === 'RACING') {
+        let liveRank = ghosts.map(g => {
+            const score = (g.lap - 1) * currentMap.path.length + (g.currentSector || 0);
+            return { name: g.name, score: score, color: g.color, done: g.isDone, time: g.finishTime || 9999, lap: g.lap };
+        });
+        const pSector = Math.floor((px / W - 0.1) / 0.8 * (currentMap.path.length - 1));
+        const pScore = (Math.min(lap, 10) - 1) * currentMap.path.length + pSector;
+        liveRank.push({ name: "YOU", score: pScore, color: GRID_COLORS[playerGridRank], done: isPlayerDone, time: playerFinishTime || 9999, lap: Math.min(lap, 10) });
+
+        liveRank.sort((a, b) => {
+            if (a.done && b.done) return a.time - b.time;
+            if (a.done) return -1;
+            if (b.done) return 1;
+            return b.score - a.score;
+        });
+
+        document.getElementById('ranking-box').innerHTML = liveRank.map((r, i) => 
+            `<div style="color:${r.color}; font-size:10px; font-weight:bold;">${(i+1).toString().padStart(2, '0')}. ${r.name} ${r.done ? 'FIN' : 'L' + r.lap}</div>`
+        ).join('');
+
+        document.getElementById('race-msg').innerHTML = (isPlayerDone ? "WAITING FOR OTHERS..." : `LAP ${Math.min(lap, 10)}/10 | ${currentTime}s`) + circuitTag;
+    } else {
+        // [추가] 경기 시작 전(STARTING 등)에도 서킷명을 하단에 미리 노출합니다. [cite: 2026-02-04]
+        document.getElementById('race-msg').innerHTML = circuitTag;
+    }
+
+    // 4. 차량 렌더링 유지
+    ghosts.forEach(g => {
+        const pos = getPointAtProgress(currentMap.path, (g.progress + 1) % 1);
+        ctx.fillStyle = g.color + (g.isDone ? "77" : "AA"); 
+        ctx.beginPath(); ctx.arc(pos.x * W, pos.y * H, 14, 0, Math.PI * 2); ctx.fill();
+    });
+    ctx.fillStyle = GRID_COLORS[playerGridRank];
+    ctx.beginPath(); ctx.arc(px, py, 16, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 3; ctx.stroke();
+
+    // 5. 최종 결과창
+    if (state === 'FINISHED') {
+        ctx.fillStyle = "rgba(0,0,0,0.95)"; ctx.fillRect(0, 0, W, H);
+        let results = ghosts.map(g => ({ name: g.name, time: g.finishTime, color: g.color }));
+        results.push({ name: "YOU", time: playerFinishTime, color: GRID_COLORS[playerGridRank] });
+        results.sort((a, b) => (a.time || 999) - (b.time || 999));
+        ctx.fillStyle = "#ff9800"; ctx.font = "bold 30px Arial"; ctx.textAlign = "center";
+        ctx.fillText("FINAL RANKING", W/2, 50);
+        ctx.fillStyle = "#00bcd4"; ctx.font = "bold 16px Arial"; ctx.fillText(currentMap.name, W/2, 85);
+        results.forEach((res, i) => {
+            ctx.fillStyle = res.color; ctx.font = "bold 16px monospace"; ctx.textAlign = "left";
+            ctx.fillText(`${(i+1).toString().padStart(2, '0')}. ${res.name.padEnd(10, ' ')}`, W/2 - 160, 130 + i*30);
+            ctx.textAlign = "right"; ctx.fillText(`${res.time ? res.time.toFixed(2) + "s" : "DNF"}`, W/2 + 160, 130 + i*30);
+        });
+    }
+    requestAnimationFrame(draw);
+}
+
+// 브라우저의 기본 드래그 및 우클릭 방해 요소를 제거합니다.
+canvas.oncontextmenu = (e) => e.preventDefault(); 
+canvas.ondragstart = (e) => e.preventDefault();  
+
+const handleMove = (e) => {
+    if(state !== 'RACING' || !isPressing) return; 
+    
+    const rect = canvas.getBoundingClientRect();
+    const tx = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+    const ty = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
+    
+    const distFromLast = Math.sqrt(Math.pow(tx - lastValidX, 2) + Math.pow(ty - lastValidY, 2));
+
+    // [강화된 검사] 현재 지점뿐만 아니라, 이동 경로 중간 5개 지점이 모두 트랙 위인지 확인
+    let pathClear = true;
+    for(let i = 1; i <= 5; i++) {
+        let checkX = lastValidX + (tx - lastValidX) * (i / 5);
+        let checkY = lastValidY + (ty - lastValidY) * (i / 5);
+        if(!isPointOnTrack(checkX, checkY)) {
+            pathClear = false;
+            break;
+        }
+    }
+
+    // 최종 지점이 트랙 위여야 하고, 경로상에 장애물이 없어야 하며, 거리 제한 이내여야 함
+    if(isPointOnTrack(tx, ty) && pathClear && distFromLast < 150) {
+        const finishLineX = canvas.width / 2 + 150;
+        const trackY = canvas.height * 0.85; 
+
+        // 1. [섹터 체크] 트랙 위쪽 35% 지점을 통과해야 랩 인정 자격 부여 (비비기 방지)
+        if (ty < canvas.height * 0.35) {
+            sectorPassed = true;
+        }
+
+        // 2. [결승선 통과] 시계 방향 (오른쪽에서 왼쪽으로)
+        if (Math.abs(ty - trackY) < 40) {
+            // 결승선 오른쪽(진입로)에서 midPassed 활성화
+            if (!midPassed && tx > finishLineX && tx < finishLineX + 80) {
+                midPassed = true;
+            }
+            
+            // 결승선을 왼쪽으로 넘어갈 때 (tx <= finishLineX)
+            if (midPassed && tx <= finishLineX) {
+                if (lap === 1) {
+                    // 첫 바퀴는 시작하자마자 바로 2랩으로 인정 (시작점 이슈 보호)
+                    lap = 2;
+                    sectorPassed = false; // 다음 랩을 위해 초기화
+                } else if (sectorPassed) {
+                    // 2랩부터는 반드시 위쪽 섹터를 찍고 와야만 카운트 업! [cite: 2026-02-03]
+                    lap++;
+                    sectorPassed = false; // 카운트 후 초기화
+                    if (lap > 10) { 
+                        document.getElementById('race-msg').innerText = "Well done!"; 
+                    }
+                }
+                midPassed = false; 
+            }
+        }
+
+        px = tx; py = ty; lastValidX = tx; lastValidY = ty;
+    } else {
+        // 경로 이탈 시 마지막 유효 지점에 차를 고정하여 가로지르기를 무효화함
+        px = lastValidX; py = lastValidY;
+    }
+};
+
+// [추가] 마우스 및 터치 누름 감지
+    canvas.addEventListener('mousedown', () => { isPressing = true; });
+    window.addEventListener('mouseup', () => { isPressing = false; });
+    canvas.addEventListener('touchstart', (e) => { isPressing = true; handleMove(e); }, {passive: false});
+    window.addEventListener('touchend', () => { isPressing = false; });
+    
+    // [기존 유지] 이동 감지
+    canvas.addEventListener('mousemove', handleMove);
+    canvas.addEventListener('touchmove', (e) => { e.preventDefault(); handleMove(e); }, {passive: false});
+
+    draw();
+</script>
+</body>
+</html>
